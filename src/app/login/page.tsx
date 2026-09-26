@@ -14,6 +14,9 @@ export default async function LoginPage({
 
   const { error } = await searchParams;
 
+  // Never pre-fill credentials or advertise demo accounts on a deployed site.
+  const isDev = process.env.NODE_ENV !== "production";
+
   return (
     <main className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-sm">
@@ -42,7 +45,7 @@ export default async function LoginPage({
               className="input"
               type="email"
               name="email"
-              defaultValue="ram@inverbrass.example"
+              defaultValue={isDev ? "ram@inverbrass.example" : ""}
               autoComplete="username"
               required
             />
@@ -53,7 +56,7 @@ export default async function LoginPage({
               className="input"
               type="password"
               name="password"
-              defaultValue="inverbrass"
+              defaultValue={isDev ? "inverbrass" : ""}
               autoComplete="current-password"
               required
             />
@@ -63,10 +66,12 @@ export default async function LoginPage({
           </button>
         </form>
 
-        <p className="mt-4 text-center text-[12px] text-[var(--muted)]">
-          Demo accounts (password <code>inverbrass</code>): ram@inverbrass.example (owner),
-          sales@inverbrass.example, ops@inverbrass.example, finance@inverbrass.example
-        </p>
+        {isDev && (
+          <p className="mt-4 text-center text-[12px] text-[var(--muted)]">
+            Demo accounts (password <code>inverbrass</code>): ram@inverbrass.example (owner),
+            sales@inverbrass.example, ops@inverbrass.example, finance@inverbrass.example
+          </p>
+        )}
       </div>
     </main>
   );
