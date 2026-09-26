@@ -99,6 +99,24 @@ These are enforced in code, not merely displayed:
 - Marking a requirement lost requires a structured loss reason.
 - Material changes are written to the audit trail, including every override.
 
+## Deploying (Vercel + hosted Postgres)
+
+1. In Vercel → Project → **Settings → Build & Development Settings**, set **Framework Preset = Next.js**
+   and leave **Output Directory** empty (the default). A `vercel.json` pinning `"framework": "nextjs"`
+   is included, but an explicit *Other*/`public` output setting in the dashboard overrides it.
+2. Add the environment variable **`DATABASE_URL`** (Neon or Supabase connection string, with
+   `?sslmode=require`) for Production, Preview and Development.
+3. Redeploy. Tables are created automatically on first request.
+4. Seed or sync data against the hosted database from this machine:
+   ```bash
+   # .env.local
+   DATABASE_URL=postgresql://...?sslmode=require
+   ```
+   then `npm run db:reset` / `npm run seed` / `npm run import:excel -- --commit`.
+
+> Do **not** run `npm run seed` on a public deployment: it creates demo users whose password is in
+> this repository. On the hosted database, create real users via Admin → Users & roles.
+
 ## Project layout
 
 ```

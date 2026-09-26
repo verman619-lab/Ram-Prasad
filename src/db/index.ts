@@ -1,9 +1,8 @@
 import path from "node:path";
 import fs from "node:fs";
-import { PGlite } from "@electric-sql/pglite";
-import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
 import { Pool } from "pg";
 import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
+import type { PgliteDatabase } from "drizzle-orm/pglite";
 import * as schema from "./schema";
 import { DDL } from "./ddl";
 
@@ -12,9 +11,12 @@ import { DDL } from "./ddl";
  *
  * If DATABASE_URL is set (Neon/Supabase/any Postgres) we use node-postgres.
  * Otherwise we run a real Postgres engine embedded in-process via PGlite,
- * persisted to ./.data/pglite. Both paths apply the same idempotent DDL.
+ * persisted to ./.data/pglite (local development only — serverless platforms
+ * have no persistent filesystem, so always set DATABASE_URL in production).
+ *
+ * PGlite is imported lazily so it is never loaded on serverless runtimes.
  */
-export type DB = ReturnType<typeof drizzlePglite<typeof schema>>;
+export type DB = PgliteDatabase<typeof schema>;
 
 interface GlobalState {
   ready?: Promise<DB>;
@@ -26,6 +28,26 @@ if (!g.__inverbrassDb) g.__inverbrassDb = {};
 
 const PGLITE_DIR = process.env.PGLITE_DIR || path.join(process.cwd(), ".data", "pglite");
 
+/** Serialise DDL across concurrent cold starts (serverless) with an advisory lock. */
+async function applyDdlPostgres(pool: Pool): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(918273645)");
+    await client.query(DDL);
+    await client.query("COMMIT");
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      /* ignore */
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 async function init(): Promise<DB> {
   const url = process.env.DATABASE_URL?.trim();
 
@@ -33,17 +55,25 @@ async function init(): Promise<DB> {
     const pool = new Pool({
       connectionString: url,
       max: 5,
-      ssl: url.includes("sslmode=require") || url.includes("neon.tech") ? { rejectUnauthorized: false } : undefined,
+      ssl:
+        url.includes("sslmode=require") || url.includes("neon.tech") || url.includes("supabase")
+          ? { rejectUnauthorized: false }
+          : undefined,
     });
-    await pool.query(DDL);
+    await applyDdlPostgres(pool);
     g.__inverbrassDb!.close = async () => {
       await pool.end();
     };
     return drizzlePg(pool, { schema }) as unknown as DB;
   }
 
-  const parent = path.dirname(PGLITE_DIR);
-  fs.mkdirSync(parent, { recursive: true });
+  // Embedded Postgres for local development. Dynamic import keeps the WASM
+  // engine out of serverless bundles.
+  const [{ PGlite }, { drizzle: drizzlePglite }] = await Promise.all([
+    import("@electric-sql/pglite"),
+    import("drizzle-orm/pglite"),
+  ]);
+  fs.mkdirSync(path.dirname(PGLITE_DIR), { recursive: true });
   const client = new PGlite(PGLITE_DIR);
   await client.exec(DDL);
   g.__inverbrassDb!.close = async () => {
