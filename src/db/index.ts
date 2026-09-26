@@ -67,6 +67,17 @@ async function init(): Promise<DB> {
     return drizzlePg(pool, { schema }) as unknown as DB;
   }
 
+  // Serverless platforms have no persistent filesystem, so the embedded
+  // database cannot be used there. Fail with an actionable message instead of
+  // a generic 500.
+  if (process.env.VERCEL) {
+    throw new Error(
+      "DATABASE_URL is not set for this environment. The embedded database cannot run on Vercel. " +
+        "Add DATABASE_URL (Neon or Supabase Postgres, e.g. postgresql://user:pass@host/db?sslmode=require) " +
+        "in Vercel Project Settings -> Environment Variables for Production, Preview and Development, then redeploy.",
+    );
+  }
+
   // Embedded Postgres for local development. Dynamic import keeps the WASM
   // engine out of serverless bundles.
   const [{ PGlite }, { drizzle: drizzlePglite }] = await Promise.all([
